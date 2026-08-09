@@ -1,0 +1,16 @@
+*.xcuserstate
+build/
+
+*.log
+build_result.txt
+build_output.txt
+build_log*.txt
+DerivedData/
+*.xcworkspace
+!default.xcworkspace
+xcuserdata/
+.DS_Store
+
+Reference/
+
+*.swp
