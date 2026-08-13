@@ -10,6 +10,12 @@
 		211854EF2F9393C90003EA7F /* PDFReader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PDFReader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* PDFLibraryFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000011 /* PDFLibraryFeature */; };
+		A10000000000000000000002 /* PDFReaderFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000012 /* PDFReaderFeature */; };
+		A10000000000000000000003 /* SettingsFeature in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000013 /* SettingsFeature */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		211854F12F9393C90003EA7F /* PDFReader */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -23,6 +29,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000001 /* PDFLibraryFeature in Frameworks */,
+				A10000000000000000000002 /* PDFReaderFeature in Frameworks */,
+				A10000000000000000000003 /* SettingsFeature in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +74,9 @@
 			);
 			name = PDFReader;
 			packageProductDependencies = (
+				A10000000000000000000011 /* PDFLibraryFeature */,
+				A10000000000000000000012 /* PDFReaderFeature */,
+				A10000000000000000000013 /* SettingsFeature */,
 			);
 			productName = PDFReader;
 			productReference = 211854EF2F9393C90003EA7F /* PDFReader.app */;
@@ -96,6 +108,11 @@
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 211854F02F9393C90003EA7F /* Products */;
+			packageReferences = (
+				A10000000000000000000021 /* XCLocalSwiftPackageReference "Packages/PDFLibraryFeature" */,
+				A10000000000000000000022 /* XCLocalSwiftPackageReference "Packages/PDFReaderFeature" */,
+				A10000000000000000000023 /* XCLocalSwiftPackageReference "Packages/SettingsFeature" */,
+			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -333,6 +350,39 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A10000000000000000000021 /* XCLocalSwiftPackageReference "Packages/PDFLibraryFeature" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/PDFLibraryFeature;
+		};
+		A10000000000000000000022 /* XCLocalSwiftPackageReference "Packages/PDFReaderFeature" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/PDFReaderFeature;
+		};
+		A10000000000000000000023 /* XCLocalSwiftPackageReference "Packages/SettingsFeature" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/SettingsFeature;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A10000000000000000000011 /* PDFLibraryFeature */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000021 /* XCLocalSwiftPackageReference "Packages/PDFLibraryFeature" */;
+			productName = PDFLibraryFeature;
+		};
+		A10000000000000000000012 /* PDFReaderFeature */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000022 /* XCLocalSwiftPackageReference "Packages/PDFReaderFeature" */;
+			productName = PDFReaderFeature;
+		};
+		A10000000000000000000013 /* SettingsFeature */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000023 /* XCLocalSwiftPackageReference "Packages/SettingsFeature" */;
+			productName = SettingsFeature;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 211854E72F9393C90003EA7F /* Project object */;
 }

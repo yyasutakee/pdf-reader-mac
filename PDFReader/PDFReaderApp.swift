@@ -2,23 +2,15 @@ import SwiftUI
 
 @main
 struct PDFReaderApp: App {
-    @AppStorage("appearanceTheme") private var appearanceTheme: AppearanceTheme = .system
-
-    private let pdfLibraryStore = PDFLibraryStore(
-        pdfLibraryRepository: PDFLibraryRepository(),
-        pdfFileStorageService: PDFFileStorageService(),
-        pdfThumbnailService: PDFThumbnailService(),
-        pdfThumbnailRepository: PDFThumbnailRepository()
-    )
+    @StateObject private var appStore: AppStore = AppStore()
 
     var body: some Scene {
         WindowGroup {
-            PDFLibraryView(pdfLibraryStore: pdfLibraryStore)
-                .preferredColorScheme(appearanceTheme.colorScheme)
+            AppRootView(appStore: appStore)
         }
 
         Settings {
-            SettingsView()
+            SettingsHost(appStore: appStore)
         }
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-class PDFFileStorageService {
+struct PDFFileStorageService {
     private let iCloudContainerIdentifier = "iCloud.yasutakeapps.PDFReader"
     private let pdfSubdirectoryName = "PDFs"
 
@@ -19,6 +19,7 @@ class PDFFileStorageService {
             .appendingPathComponent(pdfSubdirectoryName)
     }
 
+    // WHY: imported security-scoped files must be copied into app-owned storage for later access.
     func copyPDFFileIntoStorage(from sourceFileURL: URL) -> String? {
         guard let folderURL = storageFolderURL else {
             print("[PDFFileStorageService] could not resolve storage folder")
@@ -38,10 +39,12 @@ class PDFFileStorageService {
         }
     }
 
+    // WHY: persisted metadata stores a portable filename rather than an environment-specific absolute URL.
     func resolveStoredFileURL(storedFileName: String) -> URL? {
         storageFolderURL?.appendingPathComponent(storedFileName)
     }
 
+    // WHY: removing library metadata must also release the app-owned PDF file.
     func deleteStoredFile(storedFileName: String) {
         guard let fileURL = resolveStoredFileURL(storedFileName: storedFileName) else { return }
         try? FileManager.default.removeItem(at: fileURL)

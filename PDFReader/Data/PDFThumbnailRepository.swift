@@ -1,6 +1,6 @@
 import AppKit
 
-class PDFThumbnailRepository {
+struct PDFThumbnailRepository {
     private let thumbnailsDirectoryName = "PDFThumbnails"
 
     private var thumbnailsDirectoryURL: URL? {
@@ -10,6 +10,7 @@ class PDFThumbnailRepository {
             .appendingPathComponent(thumbnailsDirectoryName)
     }
 
+    // WHY: generated thumbnails need a stable cache URL that can be persisted with library metadata.
     func saveThumbnail(_ thumbnailImage: NSImage, for pdfFileIdentifier: UUID) -> URL? {
         guard let thumbnailsDirectory = thumbnailsDirectoryURL else { return nil }
         try? FileManager.default.createDirectory(at: thumbnailsDirectory, withIntermediateDirectories: true)
@@ -25,6 +26,7 @@ class PDFThumbnailRepository {
         return thumbnailFileURL
     }
 
+    // WHY: removing a library entry also removes its now-unreferenced cached image.
     func deleteThumbnail(for pdfFileIdentifier: UUID) {
         guard let thumbnailsDirectory = thumbnailsDirectoryURL else { return }
         let thumbnailFileURL = thumbnailsDirectory.appendingPathComponent("\(pdfFileIdentifier.uuidString).png")
