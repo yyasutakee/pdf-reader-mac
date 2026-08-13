@@ -86,6 +86,20 @@ final class AppStore: Store<AppState> {
         persistImportedPDFFiles()
     }
 
+    // WHY: a page bookmark belongs to the selected document and must survive future reading sessions.
+    func toggleBookmark(pageIndex: Int) {
+        guard let identifier: UUID = state.selectedPDFFileIdentifier else { return }
+        setState { toggleBookmark(pageIndex: pageIndex, identifier: identifier, in: &$0) }
+        persistImportedPDFFiles()
+    }
+
+    // WHY: explicit removal supports deleting a saved page independently from the current reading position.
+    func removeBookmark(pageIndex: Int) {
+        guard let identifier: UUID = state.selectedPDFFileIdentifier else { return }
+        setState { removeBookmark(pageIndex: pageIndex, identifier: identifier, in: &$0) }
+        persistImportedPDFFiles()
+    }
+
     // WHY: night mode is temporary reader state shared with the package through its view store.
     func toggleNightMode() {
         setState { $0.isNightModeEnabled.toggle() }
@@ -155,6 +169,35 @@ final class AppStore: Store<AppState> {
         appState.importedPDFFiles[index].lastReadPageIndex = position.pageIndex
         appState.importedPDFFiles[index].lastReadScrollPosition = position
         appState.importedPDFFiles[index].lastReadDate = Date()
+    }
+
+    // WHY: toggle semantics guarantee that each document contains at most one bookmark for a page.
+    private func toggleBookmark(pageIndex: Int, identifier: UUID, in appState: inout AppState) {
+        guard let index: Int = findImportedPDFFileIndex(identifier: identifier, in: appState) else { return }
+        guard !appState.importedPDFFiles[index].bookmarkedPageIndices.contains(pageIndex) else { removeBookmark(pageIndex: pageIndex, index: index, from: &appState); return }
+        addBookmark(pageIndex: pageIndex, index: index, to: &appState)
+    }
+
+    // WHY: explicit removal changes only the selected document's matching saved page.
+    private func removeBookmark(pageIndex: Int, identifier: UUID, in appState: inout AppState) {
+        guard let index: Int = findImportedPDFFileIndex(identifier: identifier, in: appState) else { return }
+        removeBookmark(pageIndex: pageIndex, index: index, from: &appState)
+    }
+
+    // WHY: one insertion path preserves ascending order for every bookmark mutation.
+    private func addBookmark(pageIndex: Int, index: Int, to appState: inout AppState) {
+        appState.importedPDFFiles[index].bookmarkedPageIndices.append(pageIndex)
+        appState.importedPDFFiles[index].bookmarkedPageIndices.sort()
+    }
+
+    // WHY: toggle and explicit deletion share the same matching rule.
+    private func removeBookmark(pageIndex: Int, index: Int, from appState: inout AppState) {
+        appState.importedPDFFiles[index].bookmarkedPageIndices.removeAll { $0 == pageIndex }
+    }
+
+    // WHY: bookmark mutations share one identifier lookup so document selection rules cannot diverge.
+    private func findImportedPDFFileIndex(identifier: UUID, in appState: AppState) -> Int? {
+        appState.importedPDFFiles.firstIndex { $0.identifier == identifier }
     }
 
     // WHY: every metadata mutation is encoded from the post-mutation state through one persistence call.

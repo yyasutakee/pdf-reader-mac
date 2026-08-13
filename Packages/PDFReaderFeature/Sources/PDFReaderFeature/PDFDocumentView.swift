@@ -5,6 +5,7 @@ struct PDFDocumentView: NSViewRepresentable {
     let documentURL: URL
     let initialPosition: PDFReaderPosition?
     let isAllHighlightsRemovalPending: Bool
+    let bookmarkNavigationPageIndex: Int?
     let onEvent: (PDFReaderEvent) -> Void
 
     // WHY: the coordinator owns debouncing state that must survive representable updates.
@@ -24,6 +25,7 @@ struct PDFDocumentView: NSViewRepresentable {
         context.coordinator.setEventHandler(onEvent)
         handleAllHighlightsRemovalIfNeeded(pdfView: pdfView)
         handleDocumentChangeIfNeeded(pdfView: pdfView)
+        handleBookmarkNavigationIfNeeded(pdfView: pdfView)
     }
 
     // WHY: construction is separated so makeNSView remains a readable composition sequence.
@@ -83,6 +85,13 @@ struct PDFDocumentView: NSViewRepresentable {
         schedulePositionRestoration(pdfView: pdfView)
     }
 
+    // WHY: bookmark selection is a one-shot navigation request acknowledged after PDFKit receives it.
+    private func handleBookmarkNavigationIfNeeded(pdfView: HighlightablePDFView) {
+        guard let pageIndex: Int = bookmarkNavigationPageIndex else { return }
+        pdfView.navigateToPage(pageIndex: pageIndex)
+        DispatchQueue.main.async { onEvent(.bookmarkNavigationHandled) }
+    }
+
     final class Coordinator: NSObject {
         private var onEvent: (PDFReaderEvent) -> Void
         private var captureTimer: Timer?
@@ -99,7 +108,17 @@ struct PDFDocumentView: NSViewRepresentable {
 
         // WHY: visible-page changes must join live scrolling in the same debounced capture path.
         @objc func handleVisiblePagesChanged(_ notification: Notification) {
-            schedulePositionCapture(pdfView: notification.object as? PDFView)
+            let pdfView: PDFView? = notification.object as? PDFView
+            publishCurrentPage(pdfView: pdfView)
+            schedulePositionCapture(pdfView: pdfView)
+        }
+
+        // WHY: the toolbar bookmark state must track page changes immediately rather than after persistence debounce.
+        private func publishCurrentPage(pdfView: PDFView?) {
+            guard let pdfView else { return }
+            guard let document: PDFDocument = pdfView.document else { return }
+            guard let page: PDFPage = pdfView.currentDestination?.page else { return }
+            onEvent(.currentPageChanged(document.index(for: page)))
         }
 
         // WHY: frequent PDFKit movement callbacks are coalesced to avoid excessive persistence writes.

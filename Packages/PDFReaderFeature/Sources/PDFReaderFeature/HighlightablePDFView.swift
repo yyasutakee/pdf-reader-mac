@@ -43,6 +43,14 @@ final class HighlightablePDFView: PDFView {
         persistDocument(document)
     }
 
+    // WHY: bookmark selection needs a stable page-level destination independent from saved reading coordinates.
+    func navigateToPage(pageIndex: Int) {
+        guard let document: PDFDocument = document else { return }
+        guard pageIndex >= 0, pageIndex < document.pageCount else { return }
+        guard let page: PDFPage = document.page(at: pageIndex) else { return }
+        go(to: PDFDestination(page: page, at: CGPoint(x: page.bounds(for: .cropBox).minX, y: page.bounds(for: .cropBox).maxY)))
+    }
+
     // WHY: navigation is retried after layout until a valid destination can be built.
     private func navigateToPendingPositionIfNeeded() {
         guard let position: PDFReaderPosition = pendingPosition else { return }
