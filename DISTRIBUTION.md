@@ -19,7 +19,10 @@ The password is stored by `notarytool` in Keychain. It is never written into the
 
 ## Create a notarized DMG
 
-Commit all changes, then run:
+Commit all changes, then double-click **Create DMG.command** in Finder. Enter a version such as `1.0.1`
+when prompted. The launcher runs the complete release process and reveals the finished DMG in Finder.
+
+The command-line equivalent is:
 
 ```bash
 ./Scripts/release.sh 1.0.0
