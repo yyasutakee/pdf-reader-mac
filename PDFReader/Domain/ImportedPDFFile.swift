@@ -11,7 +11,7 @@ struct ImportedPDFFile: Identifiable, Codable, Equatable {
     var lastReadScrollPosition: PDFScrollPosition?
     var lastReadDate: Date?
     var totalPageCount: Int?
-    var bookmarkedPageIndices: [Int]
+    var bookmarks: [PDFPageBookmark]
 
     init(
         identifier: UUID,
@@ -23,7 +23,7 @@ struct ImportedPDFFile: Identifiable, Codable, Equatable {
         lastReadScrollPosition: PDFScrollPosition? = nil,
         lastReadDate: Date? = nil,
         totalPageCount: Int? = nil,
-        bookmarkedPageIndices: [Int] = []
+        bookmarks: [PDFPageBookmark] = []
     ) {
         self.identifier = identifier
         self.displayName = displayName
@@ -34,7 +34,7 @@ struct ImportedPDFFile: Identifiable, Codable, Equatable {
         self.lastReadScrollPosition = lastReadScrollPosition
         self.lastReadDate = lastReadDate
         self.totalPageCount = totalPageCount
-        self.bookmarkedPageIndices = bookmarkedPageIndices
+        self.bookmarks = bookmarks
     }
 
     init(from decoder: any Decoder) throws {
@@ -48,7 +48,7 @@ struct ImportedPDFFile: Identifiable, Codable, Equatable {
         lastReadScrollPosition = try container.decodeIfPresent(PDFScrollPosition.self, forKey: .lastReadScrollPosition)
         lastReadDate = try container.decodeIfPresent(Date.self, forKey: .lastReadDate)
         totalPageCount = try container.decodeIfPresent(Int.self, forKey: .totalPageCount)
-        bookmarkedPageIndices = try container.decodeIfPresent([Int].self, forKey: .bookmarkedPageIndices) ?? []
+        bookmarks = try Self.decodeBookmarks(from: decoder, container: container)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -61,6 +61,20 @@ struct ImportedPDFFile: Identifiable, Codable, Equatable {
         case lastReadScrollPosition
         case lastReadDate
         case totalPageCount
+        case bookmarks
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
         case bookmarkedPageIndices
+    }
+
+    private static func decodeBookmarks(
+        from decoder: any Decoder,
+        container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> [PDFPageBookmark] {
+        if let bookmarks: [PDFPageBookmark] = try container.decodeIfPresent([PDFPageBookmark].self, forKey: .bookmarks) { return bookmarks }
+        let legacyContainer: KeyedDecodingContainer<LegacyCodingKeys> = try decoder.container(keyedBy: LegacyCodingKeys.self)
+        let pageIndices: [Int] = try legacyContainer.decodeIfPresent([Int].self, forKey: .bookmarkedPageIndices) ?? []
+        return pageIndices.map { PDFPageBookmark(pageIndex: $0, comment: nil) }
     }
 }

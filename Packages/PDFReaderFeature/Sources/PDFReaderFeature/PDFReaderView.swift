@@ -92,33 +92,12 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
     }
 
     private func bookmarkRow(_ bookmark: PDFBookmarkItem) -> some View {
-        HStack {
-            Button(action: { model.send(.bookmarkSelected(bookmark.pageIndex)) }) {
-                Label("Page \(bookmark.pageNumber)", systemImage: "bookmark.fill")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            Spacer()
-            removeBookmarkButton(bookmark)
-        }
-        .contentShape(Rectangle())
-        .contextMenu { removeBookmarkMenuButton(bookmark) }
-    }
-
-    private func removeBookmarkButton(_ bookmark: PDFBookmarkItem) -> some View {
-        Button(action: { model.send(.bookmarkRemoved(bookmark.pageIndex)) }) {
-            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-        }
-        .buttonStyle(.borderless)
-        .help("Remove Bookmark")
-    }
-
-    private func removeBookmarkMenuButton(_ bookmark: PDFBookmarkItem) -> some View {
-        Button(role: .destructive) {
-            model.send(.bookmarkRemoved(bookmark.pageIndex))
-        } label: {
-            Label("Remove Bookmark", systemImage: "trash")
-        }
+        BookmarkRow(
+            bookmark: bookmark,
+            onSelected: { model.send(.bookmarkSelected(bookmark.pageIndex)) },
+            onRemoved: { model.send(.bookmarkRemoved(bookmark.pageIndex)) },
+            onCommentChanged: { model.send(.bookmarkCommentChanged(pageIndex: bookmark.pageIndex, comment: $0)) }
+        )
     }
 
     private var emptyBookmarksPlaceholder: some View {
@@ -151,5 +130,81 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private struct BookmarkRow: View {
+        let bookmark: PDFBookmarkItem
+        let onSelected: () -> Void
+        let onRemoved: () -> Void
+        let onCommentChanged: (String?) -> Void
+
+        @State private var commentText: String
+        @FocusState private var isCommentFocused: Bool
+
+        init(
+            bookmark: PDFBookmarkItem,
+            onSelected: @escaping () -> Void,
+            onRemoved: @escaping () -> Void,
+            onCommentChanged: @escaping (String?) -> Void
+        ) {
+            self.bookmark = bookmark
+            self.onSelected = onSelected
+            self.onRemoved = onRemoved
+            self.onCommentChanged = onCommentChanged
+            _commentText = State(initialValue: bookmark.comment ?? "")
+        }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 6) {
+                bookmarkHeader
+                commentField
+            }
+            .contextMenu { removeBookmarkMenuButton }
+            .onChange(of: isCommentFocused) { _, isFocused in if !isFocused { commitComment() } }
+            .onChange(of: bookmark.comment) { _, comment in synchronizeComment(comment) }
+        }
+
+        private var bookmarkHeader: some View {
+            HStack {
+                Button(action: onSelected) {
+                    Label("Page \(bookmark.pageNumber)", systemImage: "bookmark.fill")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                Spacer()
+                removeBookmarkButton
+            }
+            .contentShape(Rectangle())
+        }
+
+        private var commentField: some View {
+            TextField("Add a comment", text: $commentText)
+                .textFieldStyle(.roundedBorder)
+                .focused($isCommentFocused)
+                .onSubmit(commitComment)
+        }
+
+        private var removeBookmarkButton: some View {
+            Button(action: onRemoved) {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("Remove Bookmark")
+        }
+
+        private var removeBookmarkMenuButton: some View {
+            Button(role: .destructive, action: onRemoved) {
+                Label("Remove Bookmark", systemImage: "trash")
+            }
+        }
+
+        private func commitComment() {
+            onCommentChanged(commentText)
+        }
+
+        private func synchronizeComment(_ comment: String?) {
+            guard !isCommentFocused else { return }
+            commentText = comment ?? ""
+        }
     }
 }

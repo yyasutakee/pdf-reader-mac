@@ -106,6 +106,14 @@ final class AppStore: Store<AppState> {
         persistImportedPDFFiles()
     }
 
+    // WHY: bookmark notes belong to the saved document metadata and may be cleared independently from the page marker.
+    func updateBookmarkComment(pageIndex: Int, comment: String?) {
+        guard let identifier: UUID = state.selectedPDFFileIdentifier else { return }
+        let normalizedComment: String? = normalizeBookmarkComment(comment)
+        setState { updateBookmarkComment(pageIndex: pageIndex, comment: normalizedComment, identifier: identifier, in: &$0) }
+        persistImportedPDFFiles()
+    }
+
     // WHY: night mode is temporary reader state shared with the package through its view store.
     func toggleNightMode() {
         setState { $0.isNightModeEnabled.toggle() }
@@ -180,7 +188,7 @@ final class AppStore: Store<AppState> {
     // WHY: toggle semantics guarantee that each document contains at most one bookmark for a page.
     private func toggleBookmark(pageIndex: Int, identifier: UUID, in appState: inout AppState) {
         guard let index: Int = findImportedPDFFileIndex(identifier: identifier, in: appState) else { return }
-        guard !appState.importedPDFFiles[index].bookmarkedPageIndices.contains(pageIndex) else { removeBookmark(pageIndex: pageIndex, index: index, from: &appState); return }
+        guard !appState.importedPDFFiles[index].bookmarks.contains(where: { $0.pageIndex == pageIndex }) else { removeBookmark(pageIndex: pageIndex, index: index, from: &appState); return }
         addBookmark(pageIndex: pageIndex, index: index, to: &appState)
     }
 
@@ -192,13 +200,26 @@ final class AppStore: Store<AppState> {
 
     // WHY: one insertion path preserves ascending order for every bookmark mutation.
     private func addBookmark(pageIndex: Int, index: Int, to appState: inout AppState) {
-        appState.importedPDFFiles[index].bookmarkedPageIndices.append(pageIndex)
-        appState.importedPDFFiles[index].bookmarkedPageIndices.sort()
+        appState.importedPDFFiles[index].bookmarks.append(PDFPageBookmark(pageIndex: pageIndex, comment: nil))
+        appState.importedPDFFiles[index].bookmarks.sort { $0.pageIndex < $1.pageIndex }
     }
 
     // WHY: toggle and explicit deletion share the same matching rule.
     private func removeBookmark(pageIndex: Int, index: Int, from appState: inout AppState) {
-        appState.importedPDFFiles[index].bookmarkedPageIndices.removeAll { $0 == pageIndex }
+        appState.importedPDFFiles[index].bookmarks.removeAll { $0.pageIndex == pageIndex }
+    }
+
+    // WHY: optional comments use one whitespace rule so empty notes are never persisted as meaningful content.
+    private func normalizeBookmarkComment(_ comment: String?) -> String? {
+        guard let trimmedComment: String = comment?.trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
+        return trimmedComment.isEmpty ? nil : trimmedComment
+    }
+
+    // WHY: comment changes must target the existing page marker without creating an implicit bookmark.
+    private func updateBookmarkComment(pageIndex: Int, comment: String?, identifier: UUID, in appState: inout AppState) {
+        guard let fileIndex: Int = findImportedPDFFileIndex(identifier: identifier, in: appState) else { return }
+        guard let bookmarkIndex: Int = appState.importedPDFFiles[fileIndex].bookmarks.firstIndex(where: { $0.pageIndex == pageIndex }) else { return }
+        appState.importedPDFFiles[fileIndex].bookmarks[bookmarkIndex].comment = comment
     }
 
     // WHY: bookmark mutations share one identifier lookup so document selection rules cannot diverge.

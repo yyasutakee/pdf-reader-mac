@@ -33,6 +33,7 @@ final class PDFReaderViewStore: PDFReaderViewModel {
         case .currentPageBookmarkToggled: toggleCurrentPageBookmark()
         case .bookmarkSelected(let pageIndex): setBookmarkNavigationPageIndex(pageIndex)
         case .bookmarkRemoved(let pageIndex): appStore.removeBookmark(pageIndex: pageIndex)
+        case .bookmarkCommentChanged(let pageIndex, let comment): appStore.updateBookmarkComment(pageIndex: pageIndex, comment: comment)
         case .bookmarkNavigationHandled: setBookmarkNavigationPageIndex(nil)
         case .positionChanged(let position): appStore.saveReadingPosition(makeDomainPosition(position))
         }
@@ -84,7 +85,10 @@ final class PDFReaderViewStore: PDFReaderViewModel {
     // WHY: the selected document's persisted pages become display-only inspector rows at the app boundary.
     private func makeBookmarkItems(appState: AppState) -> [PDFBookmarkItem] {
         guard let importedPDFFile: ImportedPDFFile = findSelectedPDFFile(appState: appState) else { return [] }
-        return importedPDFFile.bookmarkedPageIndices.filter { $0 >= 0 }.sorted().map(PDFBookmarkItem.init(pageIndex:))
+        return importedPDFFile.bookmarks
+            .filter { $0.pageIndex >= 0 }
+            .sorted { $0.pageIndex < $1.pageIndex }
+            .map { PDFBookmarkItem(pageIndex: $0.pageIndex, comment: $0.comment) }
     }
 
     // WHY: bookmark fill state is derived from the same rows shown by the inspector.

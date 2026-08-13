@@ -6,6 +6,7 @@ public enum PDFReaderEvent {
     case currentPageBookmarkToggled
     case bookmarkSelected(Int)
     case bookmarkRemoved(Int)
+    case bookmarkCommentChanged(pageIndex: Int, comment: String?)
     case bookmarkNavigationHandled
     case positionChanged(PDFReaderPosition)
 }
