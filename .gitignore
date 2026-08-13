@@ -6,6 +6,8 @@ build_result.txt
 build_output.txt
 build_log*.txt
 DerivedData/
+dist/
+.release/
 *.xcworkspace
 !default.xcworkspace
 xcuserdata/
