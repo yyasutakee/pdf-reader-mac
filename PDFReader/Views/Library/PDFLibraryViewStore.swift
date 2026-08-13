@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Foundation
 import PDFLibraryFeature
@@ -24,8 +25,15 @@ final class PDFLibraryViewStore: PDFLibraryViewModel {
         case .fileImporterDismissed: appStore.dismissFileImporter()
         case .pdfFileSelected(let URL): appStore.importPDFFile(from: URL)
         case .libraryItemSelected(let identifier): appStore.selectPDFFile(identifier: identifier)
+        case .libraryItemRevealRequested(let identifier): revealPDFFileInFinder(identifier: identifier)
         case .libraryItemRemovalRequested(let identifier): appStore.removeImportedPDFFile(identifier: identifier)
         }
+    }
+
+    // WHY: Finder presentation is app-layer behavior and must not leak into the domain or UI package contract.
+    private func revealPDFFileInFinder(identifier: UUID) {
+        guard let fileURL: URL = appStore.findStoredPDFFileURL(identifier: identifier) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([fileURL])
     }
 
     // WHY: didChange supplies the post-mutation value required for an accurate display snapshot.

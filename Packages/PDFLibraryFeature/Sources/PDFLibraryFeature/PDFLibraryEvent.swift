@@ -5,5 +5,6 @@ public enum PDFLibraryEvent {
     case fileImporterDismissed
     case pdfFileSelected(URL)
     case libraryItemSelected(UUID?)
+    case libraryItemRevealRequested(UUID)
     case libraryItemRemovalRequested(UUID)
 }

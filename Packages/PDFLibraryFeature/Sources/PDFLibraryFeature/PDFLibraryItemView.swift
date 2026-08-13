@@ -4,6 +4,7 @@ import SwiftUI
 struct PDFLibraryItemView: View {
     let item: PDFLibraryItem
     let isSelected: Bool
+    let onRevealRequested: () -> Void
     let onDeleteRequested: () -> Void
 
     var body: some View {
@@ -13,7 +14,11 @@ struct PDFLibraryItemView: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .contextMenu { removeButton }
+        .contextMenu {
+            showInFinderButton
+            Divider()
+            removeButton
+        }
     }
 
     private var coverThumbnail: some View {
@@ -89,6 +94,12 @@ struct PDFLibraryItemView: View {
     private var removeButton: some View {
         Button(role: .destructive, action: onDeleteRequested) {
             Label("Remove from Library", systemImage: "trash")
+        }
+    }
+
+    private var showInFinderButton: some View {
+        Button(action: onRevealRequested) {
+            Label("Show in Finder", systemImage: "folder")
         }
     }
 

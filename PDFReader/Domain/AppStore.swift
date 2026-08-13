@@ -79,6 +79,12 @@ final class AppStore: Store<AppState> {
         persistImportedPDFFiles()
     }
 
+    // WHY: callers need the current app-owned location without gaining direct access to file storage.
+    func findStoredPDFFileURL(identifier: UUID) -> URL? {
+        guard let importedPDFFile: ImportedPDFFile = findImportedPDFFile(identifier: identifier) else { return nil }
+        return pdfFileStorageService.resolveStoredFileURL(storedFileName: importedPDFFile.storedFileName)
+    }
+
     // WHY: the reading position is persisted so reopening a document resumes at the last known destination.
     func saveReadingPosition(_ position: PDFScrollPosition) {
         guard let identifier: UUID = state.selectedPDFFileIdentifier else { return }

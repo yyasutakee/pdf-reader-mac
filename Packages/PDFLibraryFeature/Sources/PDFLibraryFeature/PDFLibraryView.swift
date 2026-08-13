@@ -41,6 +41,7 @@ public struct PDFLibraryView<Model: PDFLibraryViewModel, Detail: View>: View {
             PDFLibraryItemView(
                 item: item,
                 isSelected: model.selectedItemIdentifier == item.id,
+                onRevealRequested: { model.send(.libraryItemRevealRequested(item.id)) },
                 onDeleteRequested: { model.send(.libraryItemRemovalRequested(item.id)) }
             )
             .tag(item.id)
