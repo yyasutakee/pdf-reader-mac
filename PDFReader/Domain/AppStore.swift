@@ -75,13 +75,14 @@ final class AppStore: Store<AppState> {
         guard let importedPDFFile: ImportedPDFFile = findImportedPDFFile(identifier: identifier) else { return }
         cancelPDFInquiryTask()
         let fileURL: URL? = pdfFileStorageService.resolveStoredFileURL(storedFileName: importedPDFFile.storedFileName)
+        let pdfInquiryAvailability: PDFInquiryAvailability = makeSelectedPDFAnswerGenerator().checkAvailability()
         setState { appState in
             appState.selectedPDFFileIdentifier = identifier
             appState.selectedPDFFileURL = fileURL
             appState.isAllHighlightsRemovalPending = false
             appState.pdfInquiryEntries = []
             appState.pdfInquiryPhase = .idle
-            appState.pdfInquiryAvailability = makeSelectedPDFAnswerGenerator().checkAvailability()
+            appState.pdfInquiryAvailability = pdfInquiryAvailability
             appState.pdfInquiryRequestIdentifier = nil
         }
     }
@@ -188,7 +189,8 @@ final class AppStore: Store<AppState> {
 
     // WHY: model readiness and executable availability can change while the app remains open.
     func refreshPDFInquiryAvailability() {
-        setState { $0.pdfInquiryAvailability = makeSelectedPDFAnswerGenerator().checkAvailability() }
+        let pdfInquiryAvailability: PDFInquiryAvailability = makeSelectedPDFAnswerGenerator().checkAvailability()
+        setState { $0.pdfInquiryAvailability = pdfInquiryAvailability }
     }
 
     // WHY: every request starts from a validated selected document and replaces any superseded work.
