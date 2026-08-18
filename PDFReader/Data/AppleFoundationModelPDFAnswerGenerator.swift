@@ -105,7 +105,7 @@ struct AppleFoundationModelPDFAnswerGenerator: PDFAnswerGenerating {
     }
 
     @Generable
-    private struct GeneratedAnswer {
+    struct GeneratedAnswer {
         @Guide(description: "A concise answer grounded only in the supplied PDF evidence.")
         var answer: String
 
