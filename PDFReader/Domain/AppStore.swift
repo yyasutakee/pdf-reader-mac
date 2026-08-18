@@ -162,7 +162,7 @@ final class AppStore: Store<AppState> {
 
     // WHY: one-click summarization uses the same grounded inquiry pipeline as a typed question.
     func generatePDFSummary(pageRange: PDFPageRange) {
-        startPDFInquiry(question: "Summarize the specified pages.", pageRange: pageRange)
+        startPDFInquiry(question: "指定したページを日本語で要約してください。", pageRange: pageRange)
     }
 
     // WHY: document questions are accepted only through the store so extraction and generation share one state lifecycle.
