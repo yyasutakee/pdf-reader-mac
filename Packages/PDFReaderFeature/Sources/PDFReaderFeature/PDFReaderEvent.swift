@@ -9,4 +9,10 @@ public enum PDFReaderEvent {
     case bookmarkCommentChanged(pageIndex: Int, comment: String?)
     case bookmarkNavigationHandled
     case positionChanged(PDFReaderPosition)
+    case assistantSummaryRequested(startPageNumber: Int, endPageNumber: Int)
+    case assistantQuestionSubmitted(question: String, startPageNumber: Int, endPageNumber: Int)
+    case assistantRetryRequested
+    case assistantGenerationCancelled
+    case assistantAvailabilityRefreshRequested
+    case assistantReferenceSelected(pageNumber: Int)
 }

@@ -7,22 +7,30 @@ final class AppStore: Store<AppState> {
     private let pdfThumbnailService: PDFThumbnailService
     private let pdfThumbnailRepository: PDFThumbnailRepository
     private let appearanceRepository: AppearanceRepository
+    private let pdfPageContentExtractor: PDFPageContentExtractor
+    private let pdfAnswerGenerator: any PDFAnswerGenerating
+    private var pdfInquiryTask: Task<Void, Never>? = nil
 
     init(
         pdfLibraryRepository: PDFLibraryRepository = PDFLibraryRepository(),
         pdfFileStorageService: PDFFileStorageService = PDFFileStorageService(),
         pdfThumbnailService: PDFThumbnailService = PDFThumbnailService(),
         pdfThumbnailRepository: PDFThumbnailRepository = PDFThumbnailRepository(),
-        appearanceRepository: AppearanceRepository = AppearanceRepository()
+        appearanceRepository: AppearanceRepository = AppearanceRepository(),
+        pdfPageContentExtractor: PDFPageContentExtractor = PDFPageContentExtractor(),
+        pdfAnswerGenerator: any PDFAnswerGenerating = AppleFoundationModelPDFAnswerGenerator()
     ) {
         self.pdfLibraryRepository = pdfLibraryRepository
         self.pdfFileStorageService = pdfFileStorageService
         self.pdfThumbnailService = pdfThumbnailService
         self.pdfThumbnailRepository = pdfThumbnailRepository
         self.appearanceRepository = appearanceRepository
+        self.pdfPageContentExtractor = pdfPageContentExtractor
+        self.pdfAnswerGenerator = pdfAnswerGenerator
         super.init(initialState: AppState(
             importedPDFFiles: pdfLibraryRepository.loadSavedPDFFiles(),
-            appearanceTheme: appearanceRepository.loadAppearanceTheme()
+            appearanceTheme: appearanceRepository.loadAppearanceTheme(),
+            pdfInquiryAvailability: pdfAnswerGenerator.checkAvailability()
         ))
     }
 
@@ -53,26 +61,36 @@ final class AppStore: Store<AppState> {
     func selectPDFFile(identifier: UUID?) {
         guard let identifier else { deselectPDFFile(); return }
         guard let importedPDFFile: ImportedPDFFile = findImportedPDFFile(identifier: identifier) else { return }
+        cancelPDFInquiryTask()
         let fileURL: URL? = pdfFileStorageService.resolveStoredFileURL(storedFileName: importedPDFFile.storedFileName)
         setState { appState in
             appState.selectedPDFFileIdentifier = identifier
             appState.selectedPDFFileURL = fileURL
             appState.isAllHighlightsRemovalPending = false
+            appState.pdfInquiryEntries = []
+            appState.pdfInquiryPhase = .idle
+            appState.pdfInquiryAvailability = pdfAnswerGenerator.checkAvailability()
+            appState.pdfInquiryRequestIdentifier = nil
         }
     }
 
     // WHY: an empty library selection must clear every value derived from the previous document.
     func deselectPDFFile() {
+        cancelPDFInquiryTask()
         setState { appState in
             appState.selectedPDFFileIdentifier = nil
             appState.selectedPDFFileURL = nil
+            appState.pdfInquiryRequestIdentifier = nil
             appState.isAllHighlightsRemovalPending = false
+            appState.pdfInquiryEntries = []
+            appState.pdfInquiryPhase = .idle
         }
     }
 
     // WHY: removal coordinates the stored PDF, cached thumbnail, metadata, and active selection atomically.
     func removeImportedPDFFile(identifier: UUID) {
         guard let importedPDFFile: ImportedPDFFile = findImportedPDFFile(identifier: identifier) else { return }
+        cancelPDFInquiryIfSelected(identifier: identifier)
         pdfFileStorageService.deleteStoredFile(storedFileName: importedPDFFile.storedFileName)
         pdfThumbnailRepository.deleteThumbnail(for: identifier)
         setState { removeImportedPDFFile(identifier: identifier, from: &$0) }
@@ -129,6 +147,171 @@ final class AppStore: Store<AppState> {
         setState { $0.isAllHighlightsRemovalPending = false }
     }
 
+    // WHY: one-click summarization uses the same grounded inquiry pipeline as a typed question.
+    func generatePDFSummary(pageRange: PDFPageRange) {
+        startPDFInquiry(question: "Summarize the specified pages.", pageRange: pageRange)
+    }
+
+    // WHY: document questions are accepted only through the store so extraction and generation share one state lifecycle.
+    func answerPDFQuestion(_ question: String, pageRange: PDFPageRange) {
+        let normalizedQuestion: String = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuestion.isEmpty else { return }
+        startPDFInquiry(question: normalizedQuestion, pageRange: pageRange)
+    }
+
+    // WHY: retry reuses the last recorded request and its immutable source range.
+    func retryPDFInquiry() {
+        guard let entry: PDFInquiryEntry = state.pdfInquiryEntries.last(where: { $0.author == .person }) else { return }
+        startPDFInquiry(question: entry.text, pageRange: entry.pageRange)
+    }
+
+    // WHY: cancellation must end both the model task and its observable in-progress phase.
+    func cancelPDFInquiry() {
+        cancelPDFInquiryTask()
+        setState { appState in
+            appState.pdfInquiryPhase = .idle
+            appState.pdfInquiryRequestIdentifier = nil
+        }
+    }
+
+    // WHY: model readiness can change after Apple Intelligence finishes downloading while the app remains open.
+    func refreshPDFInquiryAvailability() {
+        setState { $0.pdfInquiryAvailability = pdfAnswerGenerator.checkAvailability() }
+    }
+
+    // WHY: every request starts from a validated selected document and replaces any superseded work.
+    private func startPDFInquiry(question: String, pageRange: PDFPageRange) {
+        guard let documentURL: URL = state.selectedPDFFileURL else { setPDFInquiryFailure(.documentUnavailable); return }
+        guard state.pdfInquiryAvailability == .available else { refreshPDFInquiryAvailability(); return }
+        guard isValidPDFPageRange(pageRange) else { setPDFInquiryFailure(.invalidPageRange); return }
+        cancelPDFInquiryTask()
+        let requestIdentifier: UUID = UUID()
+        appendPDFInquiryQuestion(question, pageRange: pageRange)
+        setState { appState in
+            appState.pdfInquiryPhase = .extracting(pageRange)
+            appState.pdfInquiryRequestIdentifier = requestIdentifier
+        }
+        let task: Task<Void, Never> = Task { [weak self] in
+            await self?.performPDFInquiry(
+                question: question,
+                pageRange: pageRange,
+                documentURL: documentURL,
+                requestIdentifier: requestIdentifier
+            )
+        }
+        setPDFInquiryTask(task)
+    }
+
+    // WHY: completion steps are serialized in one task so cancellation cannot append a partial answer.
+    private func performPDFInquiry(
+        question: String,
+        pageRange: PDFPageRange,
+        documentURL: URL,
+        requestIdentifier: UUID
+    ) async {
+        do {
+            let pageContents: [PDFPageContent] = try pdfPageContentExtractor.extractPageContents(
+                documentURL: documentURL,
+                pageRange: pageRange
+            )
+            try Task.checkCancellation()
+            guard isCurrentPDFInquiry(requestIdentifier) else { return }
+            guard pageContents.contains(where: { !$0.text.isEmpty }) else {
+                setPDFInquiryFailure(.noReadableText, requestIdentifier: requestIdentifier)
+                return
+            }
+            setState { $0.pdfInquiryPhase = .generating(pageRange) }
+            let response: PDFGeneratedResponse = try await pdfAnswerGenerator.generateResponse(
+                question: question,
+                pageContents: pageContents
+            )
+            try Task.checkCancellation()
+            guard isCurrentPDFInquiry(requestIdentifier) else { return }
+            appendPDFInquiryResponse(response, pageRange: pageRange, requestIdentifier: requestIdentifier)
+        } catch is CancellationError {
+            return
+        } catch let extractionError as PDFPageContentExtractor.ExtractionError {
+            setPDFInquiryFailure(makePDFInquiryFailure(extractionError), requestIdentifier: requestIdentifier)
+        } catch {
+            setPDFInquiryFailure(.generationFailed, requestIdentifier: requestIdentifier)
+        }
+    }
+
+    // WHY: validation uses persisted page count so malformed ranges never reach PDFKit.
+    private func isValidPDFPageRange(_ pageRange: PDFPageRange) -> Bool {
+        guard let identifier: UUID = state.selectedPDFFileIdentifier else { return false }
+        guard let pageCount: Int = findImportedPDFFile(identifier: identifier)?.totalPageCount else { return false }
+        return pageRange.lowerPageIndex >= 0 && pageRange.upperPageIndex < pageCount && pageRange.lowerPageIndex <= pageRange.upperPageIndex
+    }
+
+    // WHY: the request is recorded before work begins so its original scope remains auditable.
+    private func appendPDFInquiryQuestion(_ question: String, pageRange: PDFPageRange) {
+        let entry: PDFInquiryEntry = PDFInquiryEntry(
+            id: UUID(),
+            author: .person,
+            text: question,
+            pageRange: pageRange,
+            citedPageIndices: []
+        )
+        setState { $0.pdfInquiryEntries.append(entry) }
+    }
+
+    // WHY: citations outside the requested range are discarded before becoming trusted source indices.
+    private func appendPDFInquiryResponse(
+        _ response: PDFGeneratedResponse,
+        pageRange: PDFPageRange,
+        requestIdentifier: UUID
+    ) {
+        let citedPageIndices: [Int] = response.citedPageIndices.filter(pageRange.pageIndices.contains)
+        let entry: PDFInquiryEntry = PDFInquiryEntry(
+            id: UUID(),
+            author: .model,
+            text: response.answer,
+            pageRange: pageRange,
+            citedPageIndices: citedPageIndices
+        )
+        setState { appState in
+            guard appState.pdfInquiryRequestIdentifier == requestIdentifier else { return }
+            appState.pdfInquiryEntries.append(entry)
+            appState.pdfInquiryPhase = .idle
+            appState.pdfInquiryRequestIdentifier = nil
+        }
+    }
+
+    // WHY: extraction errors are translated once into stable domain failures.
+    private func makePDFInquiryFailure(_ extractionError: PDFPageContentExtractor.ExtractionError) -> PDFInquiryFailure {
+        switch extractionError {
+        case .documentUnavailable: return .documentUnavailable
+        case .invalidPageRange: return .invalidPageRange
+        }
+    }
+
+    // WHY: all failed paths publish their terminal state through one mutation point.
+    private func setPDFInquiryFailure(_ failure: PDFInquiryFailure, requestIdentifier: UUID? = nil) {
+        setState { appState in
+            guard requestIdentifier == nil || appState.pdfInquiryRequestIdentifier == requestIdentifier else { return }
+            appState.pdfInquiryPhase = .failed(failure)
+            appState.pdfInquiryRequestIdentifier = nil
+        }
+    }
+
+    // WHY: a request identifier prevents superseded work from publishing into a later document or question.
+    private func isCurrentPDFInquiry(_ requestIdentifier: UUID) -> Bool {
+        state.pdfInquiryRequestIdentifier == requestIdentifier
+    }
+
+    // WHY: one mutation door keeps task replacement and cleanup discoverable within the state-owning store.
+    private func setPDFInquiryTask(_ task: Task<Void, Never>?) {
+        pdfInquiryTask = task
+    }
+
+    // WHY: document switches and new requests must prevent stale work from publishing into the current inquiry.
+    private func cancelPDFInquiryTask() {
+        pdfInquiryTask?.cancel()
+        setPDFInquiryTask(nil)
+    }
+
+
     // WHY: appearance selection is persisted by the store so Settings never touches UserDefaults directly.
     func selectAppearanceTheme(_ appearanceTheme: AppearanceTheme) {
         appearanceRepository.persistAppearanceTheme(appearanceTheme)
@@ -168,6 +351,12 @@ final class AppStore: Store<AppState> {
         state.importedPDFFiles.first { $0.identifier == identifier }
     }
 
+    // WHY: deleting the active document must stop work that still reads its file.
+    private func cancelPDFInquiryIfSelected(identifier: UUID) {
+        guard state.selectedPDFFileIdentifier == identifier else { return }
+        cancelPDFInquiryTask()
+    }
+
     // WHY: removal also clears values derived from the deleted selection in the same mutation.
     private func removeImportedPDFFile(identifier: UUID, from appState: inout AppState) {
         appState.importedPDFFiles.removeAll { $0.identifier == identifier }
@@ -175,6 +364,9 @@ final class AppStore: Store<AppState> {
         appState.selectedPDFFileIdentifier = nil
         appState.selectedPDFFileURL = nil
         appState.isAllHighlightsRemovalPending = false
+        appState.pdfInquiryEntries = []
+        appState.pdfInquiryPhase = .idle
+        appState.pdfInquiryRequestIdentifier = nil
     }
 
     // WHY: one mutation keeps persisted progress and the selected document snapshot identical.
