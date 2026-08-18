@@ -8,6 +8,8 @@ struct AppState {
     var isNightModeEnabled: Bool = false
     var isAllHighlightsRemovalPending: Bool = false
     var appearanceTheme: AppearanceTheme = .system
+    var pdfAnswerProvider: PDFAnswerProvider = .appleIntelligence
+    var codexExecutablePath: String = ""
     var pdfInquiryEntries: [PDFInquiryEntry] = []
     var pdfInquiryPhase: PDFInquiryPhase = .idle
     var pdfInquiryAvailability: PDFInquiryAvailability = .unavailable

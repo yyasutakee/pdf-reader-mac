@@ -7,8 +7,9 @@ final class AppStore: Store<AppState> {
     private let pdfThumbnailService: PDFThumbnailService
     private let pdfThumbnailRepository: PDFThumbnailRepository
     private let appearanceRepository: AppearanceRepository
+    private let pdfAnswerConfigurationRepository: PDFAnswerConfigurationRepository
     private let pdfPageContentExtractor: PDFPageContentExtractor
-    private let pdfAnswerGenerator: any PDFAnswerGenerating
+    private let appleFoundationModelPDFAnswerGenerator: any PDFAnswerGenerating
     private var pdfInquiryTask: Task<Void, Never>? = nil
 
     init(
@@ -17,6 +18,7 @@ final class AppStore: Store<AppState> {
         pdfThumbnailService: PDFThumbnailService = PDFThumbnailService(),
         pdfThumbnailRepository: PDFThumbnailRepository = PDFThumbnailRepository(),
         appearanceRepository: AppearanceRepository = AppearanceRepository(),
+        pdfAnswerConfigurationRepository: PDFAnswerConfigurationRepository = PDFAnswerConfigurationRepository(),
         pdfPageContentExtractor: PDFPageContentExtractor = PDFPageContentExtractor(),
         pdfAnswerGenerator: any PDFAnswerGenerating = AppleFoundationModelPDFAnswerGenerator()
     ) {
@@ -25,12 +27,22 @@ final class AppStore: Store<AppState> {
         self.pdfThumbnailService = pdfThumbnailService
         self.pdfThumbnailRepository = pdfThumbnailRepository
         self.appearanceRepository = appearanceRepository
+        self.pdfAnswerConfigurationRepository = pdfAnswerConfigurationRepository
         self.pdfPageContentExtractor = pdfPageContentExtractor
-        self.pdfAnswerGenerator = pdfAnswerGenerator
+        self.appleFoundationModelPDFAnswerGenerator = pdfAnswerGenerator
+        let pdfAnswerProvider: PDFAnswerProvider = pdfAnswerConfigurationRepository.loadPDFAnswerProvider()
+        let codexExecutablePath: String = pdfAnswerConfigurationRepository.loadCodexExecutablePath()
+        let selectedPDFAnswerGenerator: any PDFAnswerGenerating
+        switch pdfAnswerProvider {
+        case .appleIntelligence: selectedPDFAnswerGenerator = pdfAnswerGenerator
+        case .localCodex: selectedPDFAnswerGenerator = LocalCodexPDFAnswerGenerator(executablePath: codexExecutablePath)
+        }
         super.init(initialState: AppState(
             importedPDFFiles: pdfLibraryRepository.loadSavedPDFFiles(),
             appearanceTheme: appearanceRepository.loadAppearanceTheme(),
-            pdfInquiryAvailability: pdfAnswerGenerator.checkAvailability()
+            pdfAnswerProvider: pdfAnswerProvider,
+            codexExecutablePath: codexExecutablePath,
+            pdfInquiryAvailability: selectedPDFAnswerGenerator.checkAvailability()
         ))
     }
 
@@ -69,7 +81,7 @@ final class AppStore: Store<AppState> {
             appState.isAllHighlightsRemovalPending = false
             appState.pdfInquiryEntries = []
             appState.pdfInquiryPhase = .idle
-            appState.pdfInquiryAvailability = pdfAnswerGenerator.checkAvailability()
+            appState.pdfInquiryAvailability = makeSelectedPDFAnswerGenerator().checkAvailability()
             appState.pdfInquiryRequestIdentifier = nil
         }
     }
@@ -174,9 +186,9 @@ final class AppStore: Store<AppState> {
         }
     }
 
-    // WHY: model readiness can change after Apple Intelligence finishes downloading while the app remains open.
+    // WHY: model readiness and executable availability can change while the app remains open.
     func refreshPDFInquiryAvailability() {
-        setState { $0.pdfInquiryAvailability = pdfAnswerGenerator.checkAvailability() }
+        setState { $0.pdfInquiryAvailability = makeSelectedPDFAnswerGenerator().checkAvailability() }
     }
 
     // WHY: every request starts from a validated selected document and replaces any superseded work.
@@ -185,6 +197,7 @@ final class AppStore: Store<AppState> {
         guard state.pdfInquiryAvailability == .available else { refreshPDFInquiryAvailability(); return }
         guard isValidPDFPageRange(pageRange) else { setPDFInquiryFailure(.invalidPageRange); return }
         cancelPDFInquiryTask()
+        let pdfAnswerGenerator: any PDFAnswerGenerating = makeSelectedPDFAnswerGenerator()
         let requestIdentifier: UUID = UUID()
         appendPDFInquiryQuestion(question, pageRange: pageRange)
         setState { appState in
@@ -196,7 +209,8 @@ final class AppStore: Store<AppState> {
                 question: question,
                 pageRange: pageRange,
                 documentURL: documentURL,
-                requestIdentifier: requestIdentifier
+                requestIdentifier: requestIdentifier,
+                pdfAnswerGenerator: pdfAnswerGenerator
             )
         }
         setPDFInquiryTask(task)
@@ -207,7 +221,8 @@ final class AppStore: Store<AppState> {
         question: String,
         pageRange: PDFPageRange,
         documentURL: URL,
-        requestIdentifier: UUID
+        requestIdentifier: UUID,
+        pdfAnswerGenerator: any PDFAnswerGenerating
     ) async {
         do {
             let pageContents: [PDFPageContent] = try pdfPageContentExtractor.extractPageContents(
@@ -316,6 +331,49 @@ final class AppStore: Store<AppState> {
     func selectAppearanceTheme(_ appearanceTheme: AppearanceTheme) {
         appearanceRepository.persistAppearanceTheme(appearanceTheme)
         setState { $0.appearanceTheme = appearanceTheme }
+    }
+
+    // WHY: changing the answer provider replaces any active request before its response can cross provider state.
+    func selectPDFAnswerProvider(_ pdfAnswerProvider: PDFAnswerProvider) {
+        cancelPDFInquiryTask()
+        pdfAnswerConfigurationRepository.persistPDFAnswerProvider(pdfAnswerProvider)
+        let availability: PDFInquiryAvailability = makePDFAnswerGenerator(
+            provider: pdfAnswerProvider,
+            codexExecutablePath: state.codexExecutablePath
+        ).checkAvailability()
+        setState { appState in
+            appState.pdfAnswerProvider = pdfAnswerProvider
+            appState.pdfInquiryAvailability = availability
+            appState.pdfInquiryPhase = .idle
+            appState.pdfInquiryRequestIdentifier = nil
+        }
+    }
+
+    // WHY: the CLI path is stored explicitly because a launched macOS app cannot rely on an interactive shell PATH.
+    func updateCodexExecutablePath(_ executablePath: String) {
+        let normalizedExecutablePath: String = executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        pdfAnswerConfigurationRepository.persistCodexExecutablePath(normalizedExecutablePath)
+        setState { appState in
+            appState.codexExecutablePath = normalizedExecutablePath
+            guard appState.pdfAnswerProvider == .localCodex else { return }
+            appState.pdfInquiryAvailability = LocalCodexPDFAnswerGenerator(executablePath: normalizedExecutablePath).checkAvailability()
+        }
+    }
+
+    // WHY: selection logic has one definition for launch, readiness checks, and request execution.
+    private func makeSelectedPDFAnswerGenerator() -> any PDFAnswerGenerating {
+        makePDFAnswerGenerator(provider: state.pdfAnswerProvider, codexExecutablePath: state.codexExecutablePath)
+    }
+
+    // WHY: provider construction remains separate from mutable state so proposed settings can be validated before publication.
+    private func makePDFAnswerGenerator(
+        provider: PDFAnswerProvider,
+        codexExecutablePath: String
+    ) -> any PDFAnswerGenerating {
+        switch provider {
+        case .appleIntelligence: return appleFoundationModelPDFAnswerGenerator
+        case .localCodex: return LocalCodexPDFAnswerGenerator(executablePath: codexExecutablePath)
+        }
     }
 
     // WHY: import construction groups file copying and metadata derivation behind one failure boundary.
