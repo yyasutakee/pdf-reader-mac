@@ -1,5 +1,10 @@
 import Foundation
 
+enum PDFAnswerProvider: String, CaseIterable, Equatable, Sendable {
+    case appleIntelligence
+    case localCodex
+}
+
 struct PDFPageRange: Equatable, Sendable {
     let lowerPageIndex: Int
     let upperPageIndex: Int
@@ -44,6 +49,7 @@ struct PDFInquiryEntry: Identifiable, Equatable, Sendable {
 
 enum PDFInquiryAvailability: Equatable, Sendable {
     case available
+    case codexExecutableMissing
     case deviceNotEligible
     case appleIntelligenceNotEnabled
     case modelNotReady

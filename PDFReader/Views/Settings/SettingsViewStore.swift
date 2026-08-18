@@ -5,6 +5,10 @@ import SettingsFeature
 final class SettingsViewStore: SettingsViewModel {
     @Published private(set) var appearanceOptions: [AppearanceOption] = []
     @Published private(set) var selectedAppearanceIdentifier: String = AppearanceTheme.system.rawValue
+    @Published private(set) var pdfAnswerProviderOptions: [PDFAnswerProviderOptionData] = []
+    @Published private(set) var selectedPDFAnswerProviderIdentifier: String = PDFAnswerProvider.appleIntelligence.rawValue
+    @Published private(set) var codexExecutablePath: String = ""
+    @Published private(set) var showsCodexExecutablePath: Bool = false
 
     private let appStore: AppStore
     private var storeSubscriptions: Set<AnyCancellable> = []
@@ -19,6 +23,8 @@ final class SettingsViewStore: SettingsViewModel {
     func send(_ event: SettingsEvent) {
         switch event {
         case .appearanceSelected(let identifier): selectAppearanceTheme(identifier: identifier)
+        case .pdfAnswerProviderSelected(let identifier): selectPDFAnswerProvider(identifier: identifier)
+        case .codexExecutablePathChanged(let executablePath): appStore.updateCodexExecutablePath(executablePath)
         }
     }
 
@@ -33,6 +39,10 @@ final class SettingsViewStore: SettingsViewModel {
     private func recompute(from appState: AppState) {
         appearanceOptions = AppearanceTheme.allCases.map(makeAppearanceOption)
         selectedAppearanceIdentifier = appState.appearanceTheme.rawValue
+        pdfAnswerProviderOptions = PDFAnswerProvider.allCases.map(makePDFAnswerProviderOptionData)
+        selectedPDFAnswerProviderIdentifier = appState.pdfAnswerProvider.rawValue
+        codexExecutablePath = appState.codexExecutablePath
+        showsCodexExecutablePath = appState.pdfAnswerProvider == .localCodex
     }
 
     // WHY: domain choices become primitive package values only at the app boundary.
@@ -44,5 +54,24 @@ final class SettingsViewStore: SettingsViewModel {
     private func selectAppearanceTheme(identifier: String) {
         guard let appearanceTheme: AppearanceTheme = AppearanceTheme(rawValue: identifier) else { return }
         appStore.selectAppearanceTheme(appearanceTheme)
+    }
+
+    // WHY: domain provider values are converted into package-owned display data at the app boundary.
+    private func makePDFAnswerProviderOptionData(provider: PDFAnswerProvider) -> PDFAnswerProviderOptionData {
+        PDFAnswerProviderOptionData(id: provider.rawValue, title: makePDFAnswerProviderTitle(provider))
+    }
+
+    // WHY: provider names are presentation copy and therefore remain outside the domain model.
+    private func makePDFAnswerProviderTitle(_ provider: PDFAnswerProvider) -> String {
+        switch provider {
+        case .appleIntelligence: return "Apple Intelligence (On-Device)"
+        case .localCodex: return "Codex Subscription (Local CLI)"
+        }
+    }
+
+    // WHY: invalid package identifiers are rejected before they can become persisted domain state.
+    private func selectPDFAnswerProvider(identifier: String) {
+        guard let provider: PDFAnswerProvider = PDFAnswerProvider(rawValue: identifier) else { return }
+        appStore.selectPDFAnswerProvider(provider)
     }
 }

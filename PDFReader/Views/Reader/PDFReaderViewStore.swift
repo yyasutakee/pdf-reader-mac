@@ -179,6 +179,7 @@ final class PDFReaderViewStore: PDFReaderViewModel {
     private func makeAssistantAvailability(_ availability: PDFInquiryAvailability) -> PDFAssistantAvailability {
         switch availability {
         case .available: return .available
+        case .codexExecutableMissing: return .unavailable(title: "Codex CLI Not Found", description: "Set the absolute Codex executable path in Settings, then try again.")
         case .deviceNotEligible: return .unavailable(title: "Apple Intelligence Not Supported", description: "This Mac cannot run the on-device AI model.")
         case .appleIntelligenceNotEnabled: return .unavailable(title: "Turn On Apple Intelligence", description: "Enable Apple Intelligence in System Settings, then try again.")
         case .modelNotReady: return .unavailable(title: "AI Model Is Preparing", description: "The on-device model is still downloading. Try again shortly.")
