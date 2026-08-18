@@ -82,6 +82,7 @@ struct LocalCodexPDFAnswerGenerator: PDFAnswerGenerating {
         let process: Process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.currentDirectoryURL = workingDirectoryURL
+        process.environment = makeCodexProcessEnvironment()
         process.arguments = [
             "exec",
             "--ephemeral",
@@ -95,6 +96,47 @@ struct LocalCodexPDFAnswerGenerator: PDFAnswerGenerating {
         return process
     }
 
+    // WHY: Finder-launched apps lack the interactive shell PATH needed by npm's env-based Node launcher.
+    private func makeCodexProcessEnvironment() -> [String: String] {
+        var environment: [String: String] = ProcessInfo.processInfo.environment
+        environment["PATH"] = makeExecutableSearchPath(inheritedPath: environment["PATH"])
+        return environment
+    }
+
+    // WHY: explicit package-manager locations let Codex find Node without evaluating user shell startup scripts.
+    private func makeExecutableSearchPath(inheritedPath: String?) -> String {
+        let inheritedDirectories: [String] = inheritedPath?.split(separator: ":").map(String.init) ?? []
+        let candidateDirectories: [String] = makeNodeExecutableDirectories() + inheritedDirectories
+        var recordedDirectories: Set<String> = []
+        return candidateDirectories.filter { !$0.isEmpty && recordedDirectories.insert($0).inserted }.joined(separator: ":")
+    }
+
+    // WHY: npm, Homebrew, Volta, asdf, mise, and nvm cover common macOS Codex installation paths.
+    private func makeNodeExecutableDirectories() -> [String] {
+        let homeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser
+        return [
+            URL(fileURLWithPath: executablePath).deletingLastPathComponent().path,
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            homeDirectoryURL.appendingPathComponent(".volta/bin").path,
+            homeDirectoryURL.appendingPathComponent(".asdf/shims").path,
+            homeDirectoryURL.appendingPathComponent(".local/share/mise/shims").path
+        ] + makeNVMNodeExecutableDirectories(homeDirectoryURL: homeDirectoryURL)
+    }
+
+    // WHY: nvm stores Node in version-specific directories that cannot be represented by one fixed path.
+    private func makeNVMNodeExecutableDirectories(homeDirectoryURL: URL) -> [String] {
+        let versionsDirectoryURL: URL = homeDirectoryURL.appendingPathComponent(".nvm/versions/node", isDirectory: true)
+        let versionDirectoryURLs: [URL] = (try? FileManager.default.contentsOfDirectory(
+            at: versionsDirectoryURL,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        return versionDirectoryURLs
+            .map { $0.appendingPathComponent("bin", isDirectory: true) }
+            .filter { FileManager.default.isExecutableFile(atPath: $0.appendingPathComponent("node").path) }
+            .map(\.path)
+    }
+
     // WHY: concurrent pipe reads prevent a verbose stderr stream from blocking the child before it can finish.
     private func collectOutputData(
         process: Process,
@@ -105,10 +147,22 @@ struct LocalCodexPDFAnswerGenerator: PDFAnswerGenerating {
         async let errorData: Data = standardErrorPipe.fileHandleForReading.readDataToEndOfFile()
         let terminationStatus: Int32 = await waitForProcessTermination(process)
         let collectedOutputData: Data = await outputData
-        _ = await errorData
+        let collectedErrorData: Data = await errorData
         try Task.checkCancellation()
-        guard terminationStatus == 0 else { throw GenerationError.processFailed }
+        guard terminationStatus == 0 else {
+            logCodexProcessFailure(terminationStatus: terminationStatus, errorData: collectedErrorData)
+            throw GenerationError.processFailed
+        }
         return collectedOutputData
+    }
+
+    // WHY: a bounded stderr suffix makes missing runtimes and authentication failures diagnosable while limiting log volume.
+    private func logCodexProcessFailure(terminationStatus: Int32, errorData: Data) {
+        let maximumLoggedByteCount: Int = 2_000
+        let boundedErrorData: Data = errorData.suffix(maximumLoggedByteCount)
+        let errorDescription: String = String(decoding: boundedErrorData, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        print("[LocalCodexPDFAnswerGenerator] Codex exited with status \(terminationStatus): \(errorDescription)")
     }
 
     // WHY: cancellation terminates the CLI promptly so superseded document questions do not consume subscription capacity.
