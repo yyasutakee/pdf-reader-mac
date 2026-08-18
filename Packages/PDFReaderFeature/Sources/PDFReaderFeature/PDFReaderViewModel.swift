@@ -11,6 +11,11 @@ public protocol PDFReaderViewModel: ObservableObject {
     var bookmarks: [PDFBookmarkItem] { get }
     var isCurrentPageBookmarked: Bool { get }
     var bookmarkNavigationPageIndex: Int? { get }
+    var totalPageCount: Int { get }
+    var assistantMessages: [PDFAssistantMessage] { get }
+    var assistantAvailability: PDFAssistantAvailability { get }
+    var isAssistantGenerating: Bool { get }
+    var assistantStatusDescription: String? { get }
 
     // WHY: one event door prevents PDF rendering controls from learning about app state or persistence.
     func send(_ event: PDFReaderEvent)

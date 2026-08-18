@@ -1,9 +1,14 @@
+import AppKit
 import SwiftUI
 
 public struct PDFReaderView<Model: PDFReaderViewModel>: View {
     @ObservedObject private var model: Model
     @State private var isShowingRemovalConfirmation: Bool = false
-    @State private var isShowingBookmarksInspector: Bool = false
+    @State private var isShowingReaderInspector: Bool = false
+    @State private var selectedInspectorSection: InspectorSection = .assistant
+    @State private var assistantStartPageNumber: Int = 1
+    @State private var assistantEndPageNumber: Int = 1
+    @State private var assistantQuestion: String = ""
 
     public init(model: Model) {
         self.model = model
@@ -12,7 +17,7 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
     public var body: some View {
         readerContent
             .toolbar { readerToolbar }
-            .inspector(isPresented: $isShowingBookmarksInspector) { bookmarksInspector }
+            .inspector(isPresented: $isShowingReaderInspector) { readerInspector }
             .alert("Remove all highlights?", isPresented: $isShowingRemovalConfirmation) {
                 Button("Cancel", role: .cancel) {}
                 Button("Remove All", role: .destructive) { model.send(.allHighlightsRemovalRequested) }
@@ -20,6 +25,8 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
                 Text("This cannot be undone.")
             }
             .onChange(of: model.documentURL) { isShowingRemovalConfirmation = false }
+            .onChange(of: model.documentURL) { synchronizeAssistantPageRange() }
+            .onChange(of: model.totalPageCount) { synchronizeAssistantPageRange() }
     }
 
     @ViewBuilder
@@ -49,6 +56,7 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
     private var readerToolbar: some ToolbarContent {
         if model.documentURL != nil {
             ToolbarItem(placement: .primaryAction) { currentPageBookmarkButton }
+            ToolbarItem(placement: .primaryAction) { assistantInspectorButton }
             ToolbarItem(placement: .primaryAction) { bookmarksInspectorButton }
             ToolbarItem(placement: .primaryAction) { nightModeButton }
             ToolbarItem(placement: .primaryAction) { removeAllHighlightsButton }
@@ -70,11 +78,253 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
         return "\(action) Page \(pageIndex + 1)"
     }
 
+    private var assistantInspectorButton: some View {
+        Button(action: { presentInspector(section: .assistant) }) {
+            Label("Ask AI", systemImage: "sparkles")
+        }
+        .help("Ask AI About This PDF")
+    }
+
     private var bookmarksInspectorButton: some View {
-        Button(action: { isShowingBookmarksInspector.toggle() }) {
+        Button(action: { presentInspector(section: .bookmarks) }) {
             Label("Bookmarks", systemImage: "sidebar.right")
         }
-        .help(isShowingBookmarksInspector ? "Hide Bookmarks" : "Show Bookmarks")
+        .help("Show Bookmarks")
+    }
+
+    private var readerInspector: some View {
+        VStack(spacing: 0) {
+            Picker("Inspector", selection: $selectedInspectorSection) {
+                Text("AI").tag(InspectorSection.assistant)
+                Text("Bookmarks").tag(InspectorSection.bookmarks)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding()
+            Divider()
+            inspectorSectionContent
+        }
+        .inspectorColumnWidth(min: 300, ideal: 360, max: 480)
+    }
+
+    @ViewBuilder
+    private var inspectorSectionContent: some View {
+        switch selectedInspectorSection {
+        case .assistant: assistantInspector
+        case .bookmarks: bookmarksInspector
+        }
+    }
+
+    @ViewBuilder
+    private var assistantInspector: some View {
+        switch model.assistantAvailability {
+        case .available:
+            availableAssistantInspector
+        case .unavailable(let title, let description):
+            makeUnavailableAssistantInspector(title: title, description: description)
+        }
+    }
+
+    private var availableAssistantInspector: some View {
+        VStack(spacing: 0) {
+            assistantScopeControls
+            Divider()
+            assistantConversation
+            Divider()
+            assistantComposer
+        }
+    }
+
+    private var assistantScopeControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Pages").font(.headline)
+                Spacer()
+                Button("Current") { synchronizeAssistantPageRange() }
+                    .buttonStyle(.borderless)
+            }
+            HStack {
+                Stepper("From: \(assistantStartPageNumber)", value: $assistantStartPageNumber, in: assistantPageNumberRange)
+                Stepper("To: \(assistantEndPageNumber)", value: $assistantEndPageNumber, in: assistantPageNumberRange)
+            }
+            .onChange(of: assistantStartPageNumber) {
+                assistantEndPageNumber = max(assistantEndPageNumber, assistantStartPageNumber)
+            }
+            .onChange(of: assistantEndPageNumber) {
+                assistantStartPageNumber = min(assistantStartPageNumber, assistantEndPageNumber)
+            }
+            Button("Summarize Pages", systemImage: "text.document") { requestAssistantSummary() }
+                .disabled(isAssistantActionDisabled)
+        }
+        .padding()
+    }
+
+    private var assistantConversation: some View {
+        Group {
+            if model.assistantMessages.isEmpty { emptyAssistantConversation } else { assistantMessageList }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var emptyAssistantConversation: some View {
+        ContentUnavailableView(
+            "Ask About These Pages",
+            systemImage: "sparkles",
+            description: Text("Summarize a range or ask a question. Answers may contain mistakes.")
+        )
+    }
+
+    private var assistantMessageList: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 14) {
+                ForEach(model.assistantMessages) { makeAssistantMessageRow($0) }
+            }
+            .padding()
+        }
+    }
+
+    private func makeAssistantMessageRow(_ message: PDFAssistantMessage) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(message.author == .person ? "You" : "AI")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                Text(message.pageRangeDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(action: { copyAssistantMessage(message.text) }) {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+                .help("Copy")
+            }
+            Text(message.text).textSelection(.enabled)
+            makeAssistantReferences(message.referencePageNumbers)
+        }
+        .padding(10)
+        .background(message.author == .person ? Color.accentColor.opacity(0.10) : Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder
+    private func makeAssistantReferences(_ pageNumbers: [Int]) -> some View {
+        if !pageNumbers.isEmpty {
+            HStack(spacing: 6) {
+                Text("Sources:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(pageNumbers, id: \.self) { pageNumber in
+                    Button("p.\(pageNumber)") {
+                        model.send(.assistantReferenceSelected(pageNumber: pageNumber))
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                }
+            }
+        }
+    }
+
+    private var assistantComposer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let statusDescription: String = model.assistantStatusDescription {
+                makeAssistantStatus(statusDescription)
+            }
+            HStack(alignment: .bottom) {
+                TextField("Ask about selected pages", text: $assistantQuestion, axis: .vertical)
+                    .lineLimit(1...5)
+                    .onSubmit(submitAssistantQuestion)
+                if model.isAssistantGenerating { cancelAssistantButton } else { submitAssistantButton }
+            }
+            Text("AI-generated answers may be inaccurate. Check the cited pages.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .padding()
+    }
+
+    private func makeAssistantStatus(_ description: String) -> some View {
+        HStack(spacing: 8) {
+            if model.isAssistantGenerating { ProgressView().controlSize(.small) }
+            Text(description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if !model.isAssistantGenerating {
+                Spacer()
+                Button("Try Again") { model.send(.assistantRetryRequested) }
+                    .buttonStyle(.borderless)
+            }
+        }
+    }
+
+    private var submitAssistantButton: some View {
+        Button(action: submitAssistantQuestion) {
+            Image(systemName: "arrow.up.circle.fill").font(.title2)
+        }
+        .buttonStyle(.borderless)
+        .disabled(isAssistantActionDisabled || assistantQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .help("Send")
+    }
+
+    private var cancelAssistantButton: some View {
+        Button(action: { model.send(.assistantGenerationCancelled) }) {
+            Image(systemName: "stop.circle.fill").font(.title2)
+        }
+        .buttonStyle(.borderless)
+        .help("Cancel")
+    }
+
+    private func makeUnavailableAssistantInspector(title: String, description: String) -> some View {
+        ContentUnavailableView {
+            Label(title, systemImage: "sparkles")
+        } description: {
+            Text(description)
+        } actions: {
+            Button("Try Again") { model.send(.assistantAvailabilityRefreshRequested) }
+        }
+    }
+
+    private var assistantPageNumberRange: ClosedRange<Int> {
+        1...max(1, model.totalPageCount)
+    }
+
+    private var isAssistantActionDisabled: Bool {
+        model.isAssistantGenerating || model.totalPageCount == 0
+    }
+
+    private func presentInspector(section: InspectorSection) {
+        selectedInspectorSection = section
+        if section == .assistant && !isShowingReaderInspector { synchronizeAssistantPageRange() }
+        isShowingReaderInspector = true
+    }
+
+    private func synchronizeAssistantPageRange() {
+        let pageNumber: Int = min(max((model.currentPageIndex ?? 0) + 1, 1), max(model.totalPageCount, 1))
+        assistantStartPageNumber = pageNumber
+        assistantEndPageNumber = pageNumber
+    }
+
+    private func requestAssistantSummary() {
+        model.send(.assistantSummaryRequested(
+            startPageNumber: assistantStartPageNumber,
+            endPageNumber: assistantEndPageNumber
+        ))
+    }
+
+    private func submitAssistantQuestion() {
+        let question: String = assistantQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else { return }
+        model.send(.assistantQuestionSubmitted(
+            question: question,
+            startPageNumber: assistantStartPageNumber,
+            endPageNumber: assistantEndPageNumber
+        ))
+        assistantQuestion = ""
+    }
+
+    private func copyAssistantMessage(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private var bookmarksInspector: some View {
@@ -82,7 +332,6 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
             if model.bookmarks.isEmpty { emptyBookmarksPlaceholder } else { bookmarksList }
         }
         .navigationTitle("Bookmarks")
-        .inspectorColumnWidth(min: 180, ideal: 220, max: 300)
     }
 
     private var bookmarksList: some View {
@@ -206,5 +455,10 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
             guard !isCommentFocused else { return }
             commentText = comment ?? ""
         }
+    }
+
+    private enum InspectorSection: Hashable {
+        case assistant
+        case bookmarks
     }
 }
