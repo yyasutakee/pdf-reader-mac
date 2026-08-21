@@ -153,7 +153,7 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
             .onChange(of: assistantEndPageNumber) {
                 assistantStartPageNumber = min(assistantStartPageNumber, assistantEndPageNumber)
             }
-            Button("Summarize Pages", systemImage: "text.document") { requestAssistantSummary() }
+            Button("Summarize Pagesを要約する", systemImage: "text.document") { requestAssistantSummary() }
                 .disabled(isAssistantActionDisabled)
         }
         .padding()
