@@ -10,6 +10,7 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
     @State private var assistantEndPageNumber: Int = 1
     @State private var assistantQuestion: String = ""
     @State private var isAssistantSparklesAnimating: Bool = false
+    @State private var isUsingSelectedPages: Bool = true
 
     public init(model: Model) {
         self.model = model
@@ -233,6 +234,8 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
             if let statusDescription: String = model.assistantStatusDescription {
                 makeAssistantStatus(statusDescription)
             }
+            Toggle("ページを参照", isOn: $isUsingSelectedPages)
+                .toggleStyle(.switch)
             HStack(alignment: .bottom) {
                 TextField("Ask about selected pages", text: $assistantQuestion, axis: .vertical)
                     .lineLimit(1...5)
@@ -340,7 +343,8 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
         model.send(.assistantQuestionSubmitted(
             question: question,
             startPageNumber: assistantStartPageNumber,
-            endPageNumber: assistantEndPageNumber
+            endPageNumber: assistantEndPageNumber,
+            usesSelectedPages: isUsingSelectedPages
         ))
         assistantQuestion = ""
     }
