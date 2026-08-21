@@ -5,6 +5,7 @@ import PDFReaderFeature
 @MainActor
 final class PDFReaderViewStore: PDFReaderViewModel {
     @Published private(set) var documentURL: URL? = nil
+    @Published private(set) var isDocumentFileMissing: Bool = false
     @Published private(set) var initialPosition: PDFReaderPosition? = nil
     @Published private(set) var isNightModeEnabled: Bool = false
     @Published private(set) var isAllHighlightsRemovalPending: Bool = false
@@ -60,6 +61,7 @@ final class PDFReaderViewStore: PDFReaderViewModel {
     // WHY: the state parameter prevents the subscriber from reading a different app-state moment.
     private func recompute(from appState: AppState) {
         documentURL = appState.selectedPDFFileURL
+        isDocumentFileMissing = appState.isSelectedPDFFileMissing
         initialPosition = makeReaderPosition(appState: appState)
         isNightModeEnabled = appState.isNightModeEnabled
         isAllHighlightsRemovalPending = appState.isAllHighlightsRemovalPending

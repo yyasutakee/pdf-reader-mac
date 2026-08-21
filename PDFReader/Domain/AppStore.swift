@@ -30,6 +30,7 @@ final class AppStore: Store<AppState> {
         self.pdfAnswerConfigurationRepository = pdfAnswerConfigurationRepository
         self.pdfPageContentExtractor = pdfPageContentExtractor
         self.appleFoundationModelPDFAnswerGenerator = pdfAnswerGenerator
+        pdfFileStorageService.migrateLegacyStoredFiles()
         let pdfAnswerProvider: PDFAnswerProvider = pdfAnswerConfigurationRepository.loadPDFAnswerProvider()
         let codexExecutablePath: String = pdfAnswerConfigurationRepository.loadCodexExecutablePath()
         let selectedPDFAnswerGenerator: any PDFAnswerGenerating
@@ -79,6 +80,7 @@ final class AppStore: Store<AppState> {
         setState { appState in
             appState.selectedPDFFileIdentifier = identifier
             appState.selectedPDFFileURL = fileURL
+            appState.isSelectedPDFFileMissing = fileURL == nil
             appState.isAllHighlightsRemovalPending = false
             appState.pdfInquiryEntries = []
             appState.pdfInquiryPhase = .idle
@@ -93,6 +95,7 @@ final class AppStore: Store<AppState> {
         setState { appState in
             appState.selectedPDFFileIdentifier = nil
             appState.selectedPDFFileURL = nil
+            appState.isSelectedPDFFileMissing = false
             appState.pdfInquiryRequestIdentifier = nil
             appState.isAllHighlightsRemovalPending = false
             appState.pdfInquiryEntries = []
@@ -423,6 +426,7 @@ final class AppStore: Store<AppState> {
         guard appState.selectedPDFFileIdentifier == identifier else { return }
         appState.selectedPDFFileIdentifier = nil
         appState.selectedPDFFileURL = nil
+        appState.isSelectedPDFFileMissing = false
         appState.isAllHighlightsRemovalPending = false
         appState.pdfInquiryEntries = []
         appState.pdfInquiryPhase = .idle

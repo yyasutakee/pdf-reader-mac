@@ -40,6 +40,8 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
                 onEvent: model.send
             )
             .overlay { nightModeOverlay }
+        } else if model.isDocumentFileMissing {
+            missingDocumentPlaceholder
         } else {
             noSelectionPlaceholder
         }
@@ -377,6 +379,22 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
             Text("Select a PDF to read")
                 .font(.headline)
                 .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // WHY: a library entry whose file was moved or deleted must say so instead of looking unselected.
+    private var missingDocumentPlaceholder: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 40))
+                .foregroundStyle(.secondary)
+            Text("PDF file not found")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            Text("The file was moved or deleted. Import it again.")
+                .font(.subheadline)
+                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
