@@ -82,7 +82,7 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
     }
 
     private var assistantInspectorButton: some View {
-        Button(action: { presentInspector(section: .assistant) }) {
+        Button(action: toggleAssistantInspector) {
             Label("Ask AI", systemImage: "sparkles")
         }
         .help("Ask AI About This PDF")
@@ -310,6 +310,15 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
         selectedInspectorSection = section
         if section == .assistant && !isShowingReaderInspector { synchronizeAssistantPageRange() }
         isShowingReaderInspector = true
+    }
+
+    // WHY: the existing AI toolbar control provides one consistent entry point for opening and collapsing its inspector.
+    private func toggleAssistantInspector() {
+        guard isShowingReaderInspector && selectedInspectorSection == .assistant else {
+            presentInspector(section: .assistant)
+            return
+        }
+        isShowingReaderInspector = false
     }
 
     private func synchronizeAssistantPageRange() {
