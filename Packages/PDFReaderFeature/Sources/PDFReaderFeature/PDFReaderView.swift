@@ -9,6 +9,7 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
     @State private var assistantStartPageNumber: Int = 1
     @State private var assistantEndPageNumber: Int = 1
     @State private var assistantQuestion: String = ""
+    @State private var isAssistantSparklesAnimating: Bool = false
 
     public init(model: Model) {
         self.model = model
@@ -247,7 +248,7 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
 
     private func makeAssistantStatus(_ description: String) -> some View {
         HStack(spacing: 8) {
-            if model.isAssistantGenerating { ProgressView().controlSize(.small) }
+            if model.isAssistantGenerating { assistantSparklesIndicator }
             Text(description)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -257,6 +258,17 @@ public struct PDFReaderView<Model: PDFReaderViewModel>: View {
                     .buttonStyle(.borderless)
             }
         }
+    }
+
+    private var assistantSparklesIndicator: some View {
+        Image(systemName: "sparkles")
+            .font(.caption)
+            .foregroundStyle(.tint)
+            .scaleEffect(isAssistantSparklesAnimating ? 1.12 : 0.88)
+            .opacity(isAssistantSparklesAnimating ? 1 : 0.45)
+            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: isAssistantSparklesAnimating)
+            .onAppear { isAssistantSparklesAnimating = true }
+            .onDisappear { isAssistantSparklesAnimating = false }
     }
 
     private var submitAssistantButton: some View {
